@@ -34,7 +34,10 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASS", "").strip(),
 }
 
-SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "etl_database.sqlite")
+if os.getenv("VERCEL"):
+    SQLITE_DB_PATH = "/tmp/etl_database.sqlite"
+else:
+    SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "etl_database.sqlite")
 
 # Track active DB engine ("postgres" or "sqlite")
 ACTIVE_DB_ENGINE = "sqlite"
@@ -182,7 +185,10 @@ def init_sqlite_db():
     conn.close()
 
 # Auto-initialize local SQLite on startup as fallback
-init_sqlite_db()
+try:
+    init_sqlite_db()
+except Exception as e:
+    print(f"Warning: Failed to initialize SQLite fallback: {e}")
 
 def get_db_connection():
     """Returns an active connection, preferring PostgreSQL (Supabase) then SQLite."""
