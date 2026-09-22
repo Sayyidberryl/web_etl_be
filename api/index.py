@@ -33,13 +33,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def safe_int(val, default: int = 0) -> int:
+    try:
+        if val is None:
+            return default
+        s = str(val).strip()
+        return int(s) if s else default
+    except (ValueError, TypeError):
+        return default
+
 # Database Configuration (Supabase & Railway friendly)
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "aws-0-ap-northeast-2.pooler.supabase.com").strip(),
-    "port": int(os.getenv("DB_PORT", 6543)),
-    "dbname": os.getenv("DB_NAME", "postgres").strip(),
-    "user": os.getenv("DB_USER", "postgres.uaoysegountarjanafbb").strip(),
+    "host": os.getenv("DB_HOST", "aws-0-ap-northeast-2.pooler.supabase.com").strip() or "aws-0-ap-northeast-2.pooler.supabase.com",
+    "port": safe_int(os.getenv("DB_PORT"), 6543),
+    "dbname": os.getenv("DB_NAME", "postgres").strip() or "postgres",
+    "user": os.getenv("DB_USER", "postgres.uaoysegountarjanafbb").strip() or "postgres.uaoysegountarjanafbb",
     "password": os.getenv("DB_PASS", "").strip(),
 }
 
@@ -673,5 +682,5 @@ def process_etl(req: ProcessETLRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = safe_int(os.getenv("PORT"), 8000)
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
