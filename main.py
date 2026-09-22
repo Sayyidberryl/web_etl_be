@@ -375,41 +375,96 @@ def get_stats():
             "slaResolvedRate": "0.0%"
         }
 
-@app.get("/api/loss-pla")
-def get_loss_pla(
-    page: int = 1,
-    limit: int = 50,
+def build_filter_clause(
     fac_code: Optional[str] = None,
+    reff_number: Optional[str] = None,
     company_name: Optional[str] = None,
+    direct: Optional[str] = None,
+    broker: Optional[str] = None,
+    insured_name: Optional[str] = None,
     insured_loss_name: Optional[str] = None,
     vessel_name: Optional[str] = None,
     vessel_code: Optional[str] = None,
+    status: Optional[str] = None,
+    loss_cause: Optional[str] = None,
+    currency: Optional[str] = None,
+    date_of_loss: Optional[str] = None,
     search: Optional[str] = None
 ):
-    offset = (page - 1) * limit
     where_clauses = []
     params = []
 
     if fac_code:
         where_clauses.append("LOWER(fac_code) LIKE %s")
-        params.append(f"%{fac_code.lower()}%")
-    if company_name:
+        params.append(f"%{fac_code.lower().strip()}%")
+    if reff_number:
+        where_clauses.append("LOWER(reff_number) LIKE %s")
+        params.append(f"%{reff_number.lower().strip()}%")
+    c_name = company_name or direct
+    if c_name:
         where_clauses.append("LOWER(direct) LIKE %s")
-        params.append(f"%{company_name.lower()}%")
+        params.append(f"%{c_name.lower().strip()}%")
+    if broker:
+        where_clauses.append("LOWER(broker) LIKE %s")
+        params.append(f"%{broker.lower().strip()}%")
+    if insured_name:
+        where_clauses.append("LOWER(nama_tertanggung) LIKE %s")
+        params.append(f"%{insured_name.lower().strip()}%")
     if insured_loss_name:
         where_clauses.append("(LOWER(nama_tertanggung_loss) LIKE %s OR LOWER(nama_tertanggung) LIKE %s)")
-        params.extend([f"%{insured_loss_name.lower()}%", f"%{insured_loss_name.lower()}%"])
+        params.extend([f"%{insured_loss_name.lower().strip()}%", f"%{insured_loss_name.lower().strip()}%"])
     if vessel_name:
         where_clauses.append("LOWER(nama_kapal) LIKE %s")
-        params.append(f"%{vessel_name.lower()}%")
+        params.append(f"%{vessel_name.lower().strip()}%")
     if vessel_code:
         where_clauses.append("LOWER(code_kapal) LIKE %s")
-        params.append(f"%{vessel_code.lower()}%")
+        params.append(f"%{vessel_code.lower().strip()}%")
+    if status and status not in ["Semua", "Status: Semua"]:
+        where_clauses.append("LOWER(status) = %s")
+        params.append(status.lower().strip())
+    if loss_cause:
+        where_clauses.append("LOWER(loss_cause) LIKE %s")
+        params.append(f"%{loss_cause.lower().strip()}%")
+    if currency:
+        where_clauses.append("LOWER(currency) = %s")
+        params.append(currency.lower().strip())
+    if date_of_loss:
+        where_clauses.append("date_of_loss LIKE %s")
+        params.append(f"%{date_of_loss.strip()}%")
     if search:
-        where_clauses.append("(LOWER(fac_code) LIKE %s OR LOWER(reff_number) LIKE %s OR LOWER(direct) LIKE %s OR LOWER(nama_kapal) LIKE %s)")
-        params.extend([f"%{search.lower()}%"] * 4)
+        s = f"%{search.lower().strip()}%"
+        where_clauses.append("(LOWER(fac_code) LIKE %s OR LOWER(reff_number) LIKE %s OR LOWER(direct) LIKE %s OR LOWER(nama_kapal) LIKE %s OR LOWER(nama_tertanggung) LIKE %s)")
+        params.extend([s, s, s, s, s])
 
     where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    return where_sql, params
+
+@app.get("/api/loss-pla")
+def get_loss_pla(
+    page: int = 1,
+    limit: int = 50,
+    fac_code: Optional[str] = None,
+    reff_number: Optional[str] = None,
+    company_name: Optional[str] = None,
+    direct: Optional[str] = None,
+    broker: Optional[str] = None,
+    insured_name: Optional[str] = None,
+    insured_loss_name: Optional[str] = None,
+    vessel_name: Optional[str] = None,
+    vessel_code: Optional[str] = None,
+    status: Optional[str] = None,
+    loss_cause: Optional[str] = None,
+    currency: Optional[str] = None,
+    date_of_loss: Optional[str] = None,
+    search: Optional[str] = None
+):
+    offset = (page - 1) * limit
+    where_sql, params = build_filter_clause(
+        fac_code=fac_code, reff_number=reff_number, company_name=company_name, direct=direct,
+        broker=broker, insured_name=insured_name, insured_loss_name=insured_loss_name,
+        vessel_name=vessel_name, vessel_code=vessel_code, status=status,
+        loss_cause=loss_cause, currency=currency, date_of_loss=date_of_loss, search=search
+    )
 
     count_res = query_one(f'SELECT count(*) as count FROM public."FACUL_ETL_MH_LOSS_PLA"{where_sql}', params)
     total_records = count_res['count'] if count_res else 0
@@ -429,10 +484,27 @@ def get_loss_pla(
     }
 
 @app.get("/api/akseptasi")
-def get_akseptasi(page: int = 1, limit: int = 50, fac_code: Optional[str] = None):
+def get_akseptasi(
+    page: int = 1,
+    limit: int = 50,
+    fac_code: Optional[str] = None,
+    reff_number: Optional[str] = None,
+    company_name: Optional[str] = None,
+    direct: Optional[str] = None,
+    broker: Optional[str] = None,
+    insured_name: Optional[str] = None,
+    vessel_name: Optional[str] = None,
+    vessel_code: Optional[str] = None,
+    status: Optional[str] = None,
+    currency: Optional[str] = None,
+    search: Optional[str] = None
+):
     offset = (page - 1) * limit
-    where_sql = " WHERE fac_code = %s" if fac_code else ""
-    params = [fac_code] if fac_code else []
+    where_sql, params = build_filter_clause(
+        fac_code=fac_code, reff_number=reff_number, company_name=company_name, direct=direct,
+        broker=broker, insured_name=insured_name, vessel_name=vessel_name, vessel_code=vessel_code,
+        status=status, currency=currency, search=search
+    )
 
     count_res = query_one(f'SELECT count(*) as count FROM public."FACUL_ETL_MH_AKSEPTASI"{where_sql}', params)
     total_records = count_res['count'] if count_res else 0
@@ -452,14 +524,35 @@ def get_akseptasi(page: int = 1, limit: int = 50, fac_code: Optional[str] = None
     }
 
 @app.get("/api/loss-settle")
-def get_loss_settle(page: int = 1, limit: int = 50):
+def get_loss_settle(
+    page: int = 1,
+    limit: int = 50,
+    fac_code: Optional[str] = None,
+    reff_number: Optional[str] = None,
+    company_name: Optional[str] = None,
+    direct: Optional[str] = None,
+    broker: Optional[str] = None,
+    insured_name: Optional[str] = None,
+    vessel_name: Optional[str] = None,
+    vessel_code: Optional[str] = None,
+    status: Optional[str] = None,
+    currency: Optional[str] = None,
+    date_of_loss: Optional[str] = None,
+    search: Optional[str] = None
+):
     offset = (page - 1) * limit
-    count_res = query_one('SELECT count(*) as count FROM public."FACUL_ETL_MH_LOSS_SETTLE"')
+    where_sql, params = build_filter_clause(
+        fac_code=fac_code, reff_number=reff_number, company_name=company_name, direct=direct,
+        broker=broker, insured_name=insured_name, vessel_name=vessel_name, vessel_code=vessel_code,
+        status=status, currency=currency, date_of_loss=date_of_loss, search=search
+    )
+
+    count_res = query_one(f'SELECT count(*) as count FROM public."FACUL_ETL_MH_LOSS_SETTLE"{where_sql}', params)
     total_records = count_res['count'] if count_res else 0
 
     data = query_all(
-        'SELECT * FROM public."FACUL_ETL_MH_LOSS_SETTLE" ORDER BY id ASC LIMIT %s OFFSET %s', 
-        [limit, offset]
+        f'SELECT * FROM public."FACUL_ETL_MH_LOSS_SETTLE"{where_sql} ORDER BY id ASC LIMIT %s OFFSET %s', 
+        params + [limit, offset]
     )
     total_pages = (total_records + limit - 1) // limit if limit > 0 else 1
 
