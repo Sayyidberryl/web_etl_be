@@ -31,6 +31,9 @@ except Exception as e:
     HAS_PSYCOPG2 = False
     print(f"Notice: psycopg2 not loaded: {e}")
 
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path)
 load_dotenv()
 
 app = FastAPI(title="Indore ETL RU & Marine Hull API", version="2.2.0")
@@ -209,7 +212,7 @@ def init_sqlite_db():
         )
     ''')
 
-    # 2. FACUL_ETL_MH_LOSS_PLA table
+    # 2. FACUL_ETL_MH_LOSS_PLA table (24 authentic columns)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_LOSS_PLA (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,17 +224,26 @@ def init_sqlite_db():
             afiliasi_tertanggung TEXT,
             nama_tertanggung_loss TEXT,
             nama_kapal TEXT,
+            type_of_vessel TEXT,
             code_kapal TEXT,
-            sum_insured REAL,
-            loss_amount REAL,
-            currency TEXT,
+            size_of_vessel TEXT,
+            year_of_built TEXT,
+            type_of_material TEXT,
+            classification TEXT,
+            flag TEXT,
+            last_docking_date TEXT,
+            jenis_muatan TEXT,
+            riu_share REAL,
             date_of_loss TEXT,
+            currency TEXT,
+            loss_amount REAL,
             loss_cause TEXT,
-            status TEXT
+            loss_detail TEXT,
+            settled_or_os TEXT
         )
     ''')
 
-    # 3. FACUL_ETL_MH_LOSS_SETTLE table
+    # 3. FACUL_ETL_MH_LOSS_SETTLE table (24 authentic columns)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_LOSS_SETTLE (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,13 +255,22 @@ def init_sqlite_db():
             afiliasi_tertanggung TEXT,
             nama_tertanggung_loss TEXT,
             nama_kapal TEXT,
+            type_of_vessel TEXT,
             code_kapal TEXT,
-            sum_insured REAL,
-            loss_amount REAL,
-            currency TEXT,
+            size_of_vessel TEXT,
+            year_of_built TEXT,
+            type_of_material TEXT,
+            classification TEXT,
+            flag TEXT,
+            last_docking_date TEXT,
+            jenis_muatan TEXT,
+            riu_share REAL,
             date_of_loss TEXT,
+            currency TEXT,
+            loss_amount REAL,
             loss_cause TEXT,
-            status TEXT
+            loss_detail TEXT,
+            settled_or_os TEXT
         )
     ''')
 
