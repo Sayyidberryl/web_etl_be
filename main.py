@@ -44,26 +44,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def normalize_vercel_paths(request: Request, call_next):
-    """Restores the original request path from Vercel headers if rewritten."""
-    orig_path = (
-        request.headers.get("x-forwarded-uri") or 
-        request.headers.get("x-matched-path") or 
-        request.headers.get("x-original-uri") or 
-        request.headers.get("x-invoke-path")
-    )
-    if orig_path:
-        clean_path = orig_path.split("?")[0]
-        request.scope["path"] = clean_path
-    else:
-        path = request.scope.get("path", "")
-        for prefix in ["/api/index.py", "/api/index", "/index.py"]:
-            if path.startswith(prefix):
-                new_path = path[len(prefix):] or "/"
-                request.scope["path"] = new_path
-                break
-    return await call_next(request)
+from starlette.types import ASGIApp, Scope, Receive, Send
+
+class VercelPathRewriteMiddleware:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            orig_uri = None
+            for key in [b"x-forwarded-uri", b"x-matched-path", b"x-invoke-path", b"x-original-uri", b"x-vercel-sc-path"]:
+                if key in headers:
+                    orig_uri = headers[key].decode("latin1")
+                    break
+            
+            if orig_uri:
+                clean_path = orig_uri.split("?")[0]
+                scope["path"] = clean_path
+                scope["raw_path"] = clean_path.encode("latin1")
+            else:
+                path = scope.get("path", "")
+                for prefix in ["/api/index.py", "/api/index", "/index.py"]:
+                    if path.startswith(prefix):
+                        new_path = path[len(prefix):] or "/"
+                        scope["path"] = new_path
+                        scope["raw_path"] = new_path.encode("latin1")
+                        break
+
+        await self.app(scope, receive, send)
+
+app.add_middleware(VercelPathRewriteMiddleware)
 
 def safe_int(val, default: int = 0) -> int:
     try:
@@ -576,13 +587,13 @@ def execute_dml(query_sql: str, params: list = [], returning_id: bool = False):
 
 @app.get("/")
 @app.get("/api")
-def root():
+def root(request: Request):
     return {
         "title": "Indore ETL RU & Marine Hull API",
         "status": "online",
         "active_database": ACTIVE_DB_ENGINE,
-        "postgres_configured": bool(DATABASE_URL or DB_CONFIG.get("password")),
-        "supabase_project": "web etl (uaoysegountarjanafbb)"
+        "scope_path": request.scope.get("path"),
+        "raw_headers": {k.decode("latin1"): v.decode("latin1") for k, v in request.scope.get("headers", [])}
     }
 
 @app.get("/health")
