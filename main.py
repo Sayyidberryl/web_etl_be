@@ -1071,21 +1071,21 @@ def get_available_tables():
         {
             "id": "acceptance",
             "tableName": "FACUL_ETL_MH_AKSEPTASI",
-            "label": "Marine Hull - Akseptasi & Underwriting",
+            "label": "MH - Data Akseptasi",
             "description": "Tabel DWH akseptasi polis, slip penutupan, dan portofolio risiko kapal",
             "isAiParsed": False
         },
         {
             "id": "loss_pla",
             "tableName": "FACUL_ETL_MH_LOSS_PLA",
-            "label": "Marine Hull - Loss Advice (PLA / Outstanding)",
+            "label": "MH - Data Loss PLA",
             "description": "Tabel DWH klaim reasuransi fakultatif berstatus preliminary / outstanding loss",
             "isAiParsed": False
         },
         {
             "id": "loss_sla",
             "tableName": "FACUL_ETL_MH_LOSS_SETTLE",
-            "label": "Marine Hull - Settled Claims (SLA)",
+            "label": "MH - Data Loss SLA",
             "description": "Tabel DWH klaim lunas dan realisasi pembayaran santunan reasuransi",
             "isAiParsed": False
         },
