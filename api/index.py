@@ -45,6 +45,7 @@ app.add_middleware(
 )
 
 from starlette.types import ASGIApp, Scope, Receive, Send
+from urllib.parse import parse_qs, urlencode
 
 class VercelPathRewriteMiddleware:
     def __init__(self, app: ASGIApp):
@@ -52,15 +53,19 @@ class VercelPathRewriteMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] == "http":
-            headers = dict(scope.get("headers", []))
-            orig_uri = None
-            for key in [b"x-forwarded-uri", b"x-matched-path", b"x-invoke-path", b"x-original-uri", b"x-vercel-sc-path"]:
-                if key in headers:
-                    orig_uri = headers[key].decode("latin1")
-                    break
+            query_bytes = scope.get("query_string", b"")
+            query_str = query_bytes.decode("latin1")
             
-            if orig_uri:
-                clean_path = orig_uri.split("?")[0]
+            if "__path=" in query_str:
+                params = parse_qs(query_str, keep_blank_values=True)
+                extracted_path = params.pop("__path", [""])[0]
+                
+                # Reconstruct query string without internal __path routing parameter
+                new_query = urlencode(params, doseq=True)
+                scope["query_string"] = new_query.encode("latin1")
+                
+                # Format clean routing path
+                clean_path = "/" + extracted_path.lstrip("/")
                 scope["path"] = clean_path
                 scope["raw_path"] = clean_path.encode("latin1")
             else:
