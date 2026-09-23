@@ -1,6 +1,6 @@
 """
 AI Parsing Engine for Indore ETL / DWH
-Integrates with Gemini 3.8 Flash API with high-precision resilient fallback.
+Integrates with AI Parsing Engine with high-precision resilient fallback.
 Supports:
 1. Exploding 1 raw row with multi-vessel description into multiple individual vessel rows.
 2. Composite source column mapping (e.g., Type of Vessel from fac_risk + fac_desc).
@@ -327,7 +327,7 @@ def run_ai_parsing(
         api_key=api_key
     )
 
-    used_engine = "Gemini 3.8 Flash API"
+    used_engine = "Advanced AI Engine"
     if not parsed_data:
         used_engine = "High-Precision Rule Fallback"
         parsed_data = deterministic_ai_fallback_parser(

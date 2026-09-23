@@ -1003,7 +1003,7 @@ def get_available_tables():
             "id": "ai_parsed",
             "tableName": "FACUL_ETL_MH_PARSED_AI",
             "label": "Marine Hull - Hasil Normalisasi AI (Entitas Granular)",
-            "description": "Tabel DWH hasil entity extraction & multi-vessel exploding dengan model Gemini 3.8 Flash",
+            "description": "Tabel DWH hasil entity extraction & multi-vessel exploding dengan AI Parsing Engine",
             "isAiParsed": True
         }
     ]
@@ -1032,6 +1032,11 @@ def get_table_data_generic(
     search: Optional[str] = None,
     fac_code: Optional[str] = None,
     vessel_name: Optional[str] = None,
+    vessel_loss_name: Optional[str] = None,
+    vessel_code: Optional[str] = None,
+    vessel_loss_code: Optional[str] = None,
+    insured_name: Optional[str] = None,
+    insured_loss_name: Optional[str] = None,
     company_name: Optional[str] = None,
     status: Optional[str] = None
 ):
@@ -1068,9 +1073,27 @@ def get_table_data_generic(
         where_clauses.append("LOWER(fac_code) LIKE %s")
         params.append(f"%{fac_code.lower().strip()}%")
 
-    if vessel_name and "nama_kapal" in col_keys:
+    v_name = vessel_name or vessel_loss_name
+    if v_name and "nama_kapal" in col_keys:
         where_clauses.append("LOWER(nama_kapal) LIKE %s")
-        params.append(f"%{vessel_name.lower().strip()}%")
+        params.append(f"%{v_name.lower().strip()}%")
+
+    v_code = vessel_code or vessel_loss_code
+    if v_code and "code_kapal" in col_keys:
+        where_clauses.append("LOWER(code_kapal) LIKE %s")
+        params.append(f"%{v_code.lower().strip()}%")
+
+    if insured_loss_name:
+        if "nama_tertanngung_loss" in col_keys:
+            where_clauses.append("LOWER(nama_tertanngung_loss) LIKE %s")
+            params.append(f"%{insured_loss_name.lower().strip()}%")
+        elif "nama_tertanggung" in col_keys:
+            where_clauses.append("LOWER(nama_tertanggung) LIKE %s")
+            params.append(f"%{insured_loss_name.lower().strip()}%")
+
+    if insured_name and "nama_tertanggung" in col_keys:
+        where_clauses.append("LOWER(nama_tertanggung) LIKE %s")
+        params.append(f"%{insured_name.lower().strip()}%")
 
     if company_name and "direct" in col_keys:
         where_clauses.append("LOWER(direct) LIKE %s")
@@ -1255,7 +1278,7 @@ def execute_ai_parsing(req: AiParseRequest):
     """Executes AI parsing, entity extraction & multi-vessel exploding, then loads into DWH."""
     input_rows = req.rows if req.rows and len(req.rows) > 0 else demo_data.DEMO_RAW_10_ROWS
 
-    # Run AI Parsing using Gemini 3.8 Flash API engine (with resilient fallback)
+    # Run AI Parsing using AI Parsing Engine (with resilient fallback)
     parse_result = ai_engine.run_ai_parsing(
         rows=input_rows,
         prompt_template=req.prompt_template or ai_engine.DEFAULT_PROMPT_TEMPLATE,
@@ -1303,7 +1326,7 @@ def execute_ai_parsing(req: AiParseRequest):
                 len(exploded_rows),
                 99.8,
                 3.4,
-                f"AI Parsing Gemini 3.8 Flash sukses. Sebanyak {len(input_rows)} baris mentah di-explode menjadi {len(exploded_rows)} baris entitas kapal individual terstandarisasi."
+                f"AI Parsing Engine sukses. Sebanyak {len(input_rows)} baris mentah di-explode menjadi {len(exploded_rows)} baris entitas kapal individual terstandarisasi."
             ])
         except Exception as dwh_err:
             print(f"Error saving AI parsed results to DWH: {dwh_err}")
@@ -1320,7 +1343,7 @@ def execute_ai_parsing(req: AiParseRequest):
 
     return {
         "success": True,
-        "usedEngine": parse_result.get("used_engine", "Gemini 3.8 Flash API"),
+        "usedEngine": parse_result.get("used_engine", "Advanced AI Engine"),
         "sourceCount": len(input_rows),
         "resultCount": len(exploded_rows),
         "expansionRatio": parse_result.get("expansion_ratio", 1.5),
