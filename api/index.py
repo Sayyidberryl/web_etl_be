@@ -66,6 +66,22 @@ DB_CONFIG = {
 # Use /tmp on Vercel serverless to avoid read-only filesystem errors
 if os.getenv("VERCEL"):
     SQLITE_DB_PATH = "/tmp/etl_database.sqlite"
+    # Seed /tmp/etl_database.sqlite from bundled repository sqlite if not yet present
+    try:
+        bundled_candidates = [
+            os.path.join(os.path.dirname(__file__), "etl_database.sqlite"),
+            os.path.join(os.path.dirname(__file__), "api", "etl_database.sqlite"),
+            os.path.join(os.path.dirname(__file__), "..", "etl_database.sqlite")
+        ]
+        if not os.path.exists(SQLITE_DB_PATH) or os.path.getsize(SQLITE_DB_PATH) < 1000:
+            import shutil
+            for b in bundled_candidates:
+                if os.path.exists(b) and os.path.getsize(b) > 1000:
+                    shutil.copyfile(b, SQLITE_DB_PATH)
+                    print(f"Copied bundled sqlite ({os.path.getsize(b)} bytes) to {SQLITE_DB_PATH}")
+                    break
+    except Exception as e:
+        print(f"Notice: Could not copy bundled sqlite to /tmp: {e}")
 else:
     SQLITE_DB_PATH = os.path.join(os.path.dirname(__file__), "etl_database.sqlite")
 
@@ -120,7 +136,7 @@ def init_sqlite_db():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # 1. FACUL_ETL_MH_AKSEPTASI table
+    # 1. FACUL_ETL_MH_AKSEPTASI table (29 authentic columns from data_mh_akseptasi.xlsx, no status column)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_AKSEPTASI (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,15 +146,29 @@ def init_sqlite_db():
             broker TEXT,
             nama_tertanggung TEXT,
             afiliasi_tertanggung TEXT,
-            nama_tertanggung_loss TEXT,
+            coverage TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            acceptance_status TEXT,
             nama_kapal TEXT,
+            type_of_vessel TEXT,
             code_kapal TEXT,
-            sum_insured REAL,
-            loss_amount REAL,
+            size_of_vessel TEXT,
+            year_of_built TEXT,
+            type_of_material TEXT,
+            classification TEXT,
+            flag TEXT,
+            last_docking_date TEXT,
+            jenis_muatan TEXT,
+            trading_area TEXT,
             currency TEXT,
-            date_of_loss TEXT,
-            loss_cause TEXT,
-            status TEXT
+            insured_value REAL,
+            premium_rate REAL,
+            premium_amount REAL,
+            ric REAL,
+            riu_share REAL,
+            riu_gross_premium REAL,
+            riu_net_premium REAL
         )
     ''')
 
@@ -341,6 +371,10 @@ def format_column_label(col_name: str) -> str:
         "nama_tertanggung": "Nama Tertanggung",
         "fac_insured": "Nama Tertanggung",
         "afiliasi_tertanggung": "Afiliasi Tertanggung",
+        "coverage": "Coverage",
+        "start_date": "Start Date",
+        "end_date": "End Date",
+        "acceptance_status": "Acceptance Status",
         "nama_tertanggung_loss": "Nama Tertanggung Loss",
         "nama_tertanngung_loss": "Nama Tertanggung Loss",
         "nama_kapal": "Nama Kapal",
@@ -357,6 +391,13 @@ def format_column_label(col_name: str) -> str:
         "jenis_muatan": "Jenis Muatan",
         "trading_area": "Trading Area",
         "currency": "Currency",
+        "insured_value": "Insured Value",
+        "premium_rate": "Premium Rate",
+        "premium_amount": "Premium Amount",
+        "ric": "RIC",
+        "riu_share": "RIU Share",
+        "riu_gross_premium": "RIU Gross Premium",
+        "riu_net_premium": "RIU Net Premium",
         "sum_insured": "Sum Insured",
         "loss_amount": "OUR Loss Amount",
         "date_of_loss": "Date of Loss / UW Year",
@@ -375,8 +416,10 @@ def introspect_table_columns(table_name: str) -> List[Dict[str, Any]]:
     cur = conn.cursor()
     columns_meta = []
     try:
+        clean_tbl = table_name.replace('public.', '').replace('"', '')
+        is_akseptasi = "AKSEPTASI" in clean_tbl.upper()
+
         if ACTIVE_DB_ENGINE == "sqlite":
-            clean_tbl = table_name.replace('public.', '').replace('"', '')
             cur.execute(f"PRAGMA table_info({clean_tbl});")
             cols = cur.fetchall()
             for col in cols:
@@ -384,36 +427,42 @@ def introspect_table_columns(table_name: str) -> List[Dict[str, Any]]:
                 col_type = col[2].upper() if col[2] else "TEXT"
                 if col_name.lower() in ["id"]:
                     continue
+                # For Akseptasi, ensure legacy/generic 'status' column is NEVER included
+                if is_akseptasi and col_name.lower() == "status":
+                    continue
                 columns_meta.append({
                     "key": col_name,
                     "label": format_column_label(col_name),
                     "dataType": col_type,
-                    "isAmount": col_name in ["sum_insured", "loss_amount", "insured_value", "premium_amount", "riu_gross_premium", "riu_net_premium", "fac_totsi", "fac_our_amt"],
+                    "isAmount": col_name in ["sum_insured", "loss_amount", "insured_value", "premium_amount", "riu_gross_premium", "riu_net_premium", "fac_totsi", "fac_our_amt", "ric", "riu_share", "premium_rate"],
                     "isDate": col_name in ["date_of_loss", "start_date", "end_date", "last_docking_date", "fac_com_date", "fac_exp_date", "fac_doc_date", "created_at"],
                     "isCode": col_name in ["code_kapal", "fac_code", "reff_number", "fac_old_ref"],
                     "isVessel": col_name in ["nama_kapal", "fac_vessel"],
                     "bold": col_name in ["fac_code", "nama_kapal"]
                 })
         else:
-            # Postgres information_schema query
+            # Postgres information_schema query (support both uppercase and lowercase)
             clean_tbl = table_name.replace('public.', '').replace('"', '')
             cur.execute("""
                 SELECT column_name, data_type 
                 FROM information_schema.columns 
-                WHERE table_name = %s 
+                WHERE table_name = %s OR table_name = %s OR table_name = %s
                 ORDER BY ordinal_position;
-            """, [clean_tbl.lower()])
+            """, [clean_tbl, clean_tbl.lower(), clean_tbl.upper()])
             cols = cur.fetchall()
             for col in cols:
                 col_name = col["column_name"] if isinstance(col, dict) else col[0]
                 col_type = (col["data_type"] if isinstance(col, dict) else col[1]).upper()
                 if col_name.lower() in ["id"]:
                     continue
+                # For Akseptasi, ensure legacy/generic 'status' column is NEVER included
+                if is_akseptasi and col_name.lower() == "status":
+                    continue
                 columns_meta.append({
                     "key": col_name,
                     "label": format_column_label(col_name),
                     "dataType": col_type,
-                    "isAmount": col_name in ["sum_insured", "loss_amount", "insured_value", "premium_amount", "riu_gross_premium", "riu_net_premium", "fac_totsi", "fac_our_amt"],
+                    "isAmount": col_name in ["sum_insured", "loss_amount", "insured_value", "premium_amount", "riu_gross_premium", "riu_net_premium", "fac_totsi", "fac_our_amt", "ric", "riu_share", "premium_rate"],
                     "isDate": col_name in ["date_of_loss", "start_date", "end_date", "last_docking_date", "fac_com_date", "fac_exp_date", "fac_doc_date", "created_at"],
                     "isCode": col_name in ["code_kapal", "fac_code", "reff_number", "fac_old_ref"],
                     "isVessel": col_name in ["nama_kapal", "fac_vessel"],
@@ -979,17 +1028,17 @@ def get_available_tables():
     """Returns all available DWH tables with runtime row counts and column counts."""
     tables_def = [
         {
-            "id": "loss_pla",
-            "tableName": "FACUL_ETL_MH_LOSS_PLA",
-            "label": "Marine Hull - Loss Advice (PLA / Outstanding)",
-            "description": "Tabel DWH klaim reasuransi fakultatif berstatus preliminary / outstanding loss",
-            "isAiParsed": False
-        },
-        {
             "id": "acceptance",
             "tableName": "FACUL_ETL_MH_AKSEPTASI",
             "label": "Marine Hull - Akseptasi & Underwriting",
             "description": "Tabel DWH akseptasi polis, slip penutupan, dan portofolio risiko kapal",
+            "isAiParsed": False
+        },
+        {
+            "id": "loss_pla",
+            "tableName": "FACUL_ETL_MH_LOSS_PLA",
+            "label": "Marine Hull - Loss Advice (PLA / Outstanding)",
+            "description": "Tabel DWH klaim reasuransi fakultatif berstatus preliminary / outstanding loss",
             "isAiParsed": False
         },
         {
@@ -1026,7 +1075,7 @@ def get_available_tables():
 
 @app.get("/api/table-data")
 def get_table_data_generic(
-    table: str = Query("loss_pla", description="Table key or table name"),
+    table: str = Query("acceptance", description="Table key or table name"),
     page: int = 1,
     limit: int = 12,
     search: Optional[str] = None,

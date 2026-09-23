@@ -43,6 +43,7 @@ venv.bak/
 *.sqlite
 *.sqlite3
 *.db
+!api/etl_database.sqlite
 
 # Logs
 logs/
