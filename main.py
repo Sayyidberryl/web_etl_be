@@ -44,6 +44,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def normalize_vercel_paths(request, call_next):
+    """Normalizes path whether Vercel rewrites to /api/index.py, /api/index, or strips /api."""
+    path = request.scope.get("path", "")
+    for prefix in ["/api/index.py", "/api/index", "/index.py"]:
+        if path.startswith(prefix):
+            new_path = path[len(prefix):] or "/"
+            request.scope["path"] = new_path
+            break
+    return await call_next(request)
+
 def safe_int(val, default: int = 0) -> int:
     try:
         if val is None:
@@ -554,6 +565,7 @@ def execute_dml(query_sql: str, params: list = [], returning_id: bool = False):
 # ---------------- API ENDPOINTS ----------------
 
 @app.get("/")
+@app.get("/api")
 def root():
     return {
         "title": "Indore ETL RU & Marine Hull API",
@@ -563,6 +575,7 @@ def root():
         "supabase_project": "web etl (uaoysegountarjanafbb)"
     }
 
+@app.get("/health")
 @app.get("/api/health")
 def health_check():
     return {
@@ -573,6 +586,7 @@ def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
+@app.get("/stats")
 @app.get("/api/stats")
 def get_stats():
     try:
@@ -1023,6 +1037,7 @@ def process_etl(req: ProcessETLRequest):
 
 # ---------------- DYNAMIC DWH & RUNTIME TABLES ENDPOINTS ----------------
 
+@app.get("/tables")
 @app.get("/api/tables")
 def get_available_tables():
     """Returns all available DWH tables with runtime row counts and column counts."""
@@ -1073,6 +1088,7 @@ def get_available_tables():
         })
     return result
 
+@app.get("/table-data")
 @app.get("/api/table-data")
 def get_table_data_generic(
     table: str = Query("acceptance", description="Table key or table name"),
