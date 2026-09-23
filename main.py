@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Query, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -45,14 +45,24 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def normalize_vercel_paths(request, call_next):
-    """Normalizes path whether Vercel rewrites to /api/index.py, /api/index, or strips /api."""
-    path = request.scope.get("path", "")
-    for prefix in ["/api/index.py", "/api/index", "/index.py"]:
-        if path.startswith(prefix):
-            new_path = path[len(prefix):] or "/"
-            request.scope["path"] = new_path
-            break
+async def normalize_vercel_paths(request: Request, call_next):
+    """Restores the original request path from Vercel headers if rewritten."""
+    orig_path = (
+        request.headers.get("x-forwarded-uri") or 
+        request.headers.get("x-matched-path") or 
+        request.headers.get("x-original-uri") or 
+        request.headers.get("x-invoke-path")
+    )
+    if orig_path:
+        clean_path = orig_path.split("?")[0]
+        request.scope["path"] = clean_path
+    else:
+        path = request.scope.get("path", "")
+        for prefix in ["/api/index.py", "/api/index", "/index.py"]:
+            if path.startswith(prefix):
+                new_path = path[len(prefix):] or "/"
+                request.scope["path"] = new_path
+                break
     return await call_next(request)
 
 def safe_int(val, default: int = 0) -> int:
