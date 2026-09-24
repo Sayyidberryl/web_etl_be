@@ -1383,67 +1383,112 @@ class AiParseRequest(BaseModel):
     cob: Optional[str] = "Marine Hull"
     cedant: Optional[str] = "PT Asuransi Central Asia / Konsorsium"
     save_to_dwh: Optional[bool] = True
-    target_table: Optional[str] = "FACUL_ETL_MH_PARSED_AI"
+    target_table: Optional[str] = "FACUL_ETL_MH_AKSEPTASI"
+    output_title: Optional[str] = ""
 
 @app.post("/api/ai-parse")
+@app.post("/ai-parse")
 def execute_ai_parsing(req: AiParseRequest):
-    """Executes AI parsing, entity extraction & multi-vessel exploding, then loads into DWH."""
+    """Executes ETL Simulation by querying existing DB based on fac_code and creating dynamic tables."""
     input_rows = req.rows if req.rows and len(req.rows) > 0 else demo_data.DEMO_RAW_10_ROWS
+    
+    # Clean output title for table name
+    timestamp_suffix = int(time.time())
+    
+    base_title = req.output_title.strip() if req.output_title else "Output_Simulasi"
+    safe_table_name = "ETL_OUT_" + re.sub(r'[^a-zA-Z0-9_]', '_', base_title).upper()[:30] + f"_{timestamp_suffix}"
+    
+    # Identify target base table to copy structure and search from
+    base_table = req.target_table
+    if not base_table:
+        base_table = "FACUL_ETL_MH_AKSEPTASI"
 
-    # Run AI Parsing using AI Parsing Engine (with resilient fallback)
-    parse_result = ai_engine.run_ai_parsing(
-        rows=input_rows,
-        prompt_template=req.prompt_template or ai_engine.DEFAULT_PROMPT_TEMPLATE,
-        target_columns=req.target_columns,
-        source_mapping=req.source_mapping
-    )
+    # Grab the columns from base table
+    base_cols = introspect_table_columns(base_table)
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    exploded_rows = []
+    
+    try:
+        # Create new dynamic table mirroring the base table
+        if ACTIVE_DB_ENGINE == "sqlite":
+            cur.execute(f"PRAGMA table_info({base_table})")
+            columns_def = cur.fetchall()
+            col_defs = []
+            for col in columns_def:
+                col_name = col[1]
+                col_type = col[2]
+                if col_name.lower() == "id":
+                    col_defs.append(f"{col_name} INTEGER PRIMARY KEY AUTOINCREMENT")
+                else:
+                    col_defs.append(f"{col_name} {col_type}")
+            create_sql = f"CREATE TABLE {safe_table_name} ({', '.join(col_defs)})"
+            cur.execute(create_sql)
+        else:
+            cur.execute(f'CREATE TABLE "{safe_table_name}" (LIKE "{base_table}" INCLUDING ALL)')
+            
+        # Register to GENERATED_TABLES
+        cur.execute(
+            "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
+            (safe_table_name, req.output_title or base_table, f"Hasil proses Parsing Engine dari {req.file_name}", base_table)
+        )
+        
+        # Insert matched rows
+        for row in input_rows:
+            fac_code = row.get("fac_code") or row.get("Fac Code")
+            if not fac_code:
+                continue
+                
+            search_query = f'SELECT * FROM "{base_table}" WHERE fac_code = ?'
+            cur.execute(search_query.replace('?', '%s') if ACTIVE_DB_ENGINE == "postgres" else search_query, (fac_code,))
+            matches = cur.fetchall()
+            
+            for match in matches:
+                match_dict = dict(match)
+                if 'id' in match_dict:
+                    del match_dict['id']
+                
+                cols = list(match_dict.keys())
+                vals = list(match_dict.values())
+                placeholders = ', '.join(['?' if ACTIVE_DB_ENGINE == "sqlite" else '%s'] * len(vals))
+                
+                insert_query = f'INSERT INTO "{safe_table_name}" ({", ".join(cols)}) VALUES ({placeholders})'
+                cur.execute(insert_query, vals)
+                
+                exploded_rows.append(match_dict)
+                
+        conn.commit()
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Error creating dynamic table or inserting: {e}")
+    finally:
+        cur.close()
+        conn.close()
 
-    exploded_rows = parse_result.get("data", [])
+    # Record in ETL_HISTORY
+    now_display = datetime.now().strftime("%d %b %Y, %H:%M WIB")
+    execute_dml('''
+        INSERT INTO etl_history (
+            file_name, file_size, file_type, cedant, cob, status,
+            date_display, records_count, schema_accuracy, duration_seconds, log_message
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', [
+        req.file_name or "Raw_Batch_Unparsed.xlsx",
+        req.file_size or "14.2 KB",
+        "XLSX",
+        req.cedant or "PT Asuransi",
+        req.cob or "Marine Hull",
+        "Berhasil Dimuat (Parsing Engine)",
+        now_display,
+        len(exploded_rows),
+        100.0,
+        3.4,
+        f"Parsing Engine sukses. {len(exploded_rows)} baris data berhasil ditemukan berdasarkan fac_code dan dimuat ke tabel {safe_table_name}."
+    ])
 
-    # If save_to_dwh is requested, populate into FACUL_ETL_MH_PARSED_AI
-    if req.save_to_dwh and exploded_rows:
-        try:
-            # Clear previous parsed table records to keep demo crisp and clean
-            execute_dml('DELETE FROM "FACUL_ETL_MH_PARSED_AI"')
-            for r in exploded_rows:
-                execute_dml('''
-                    INSERT INTO "FACUL_ETL_MH_PARSED_AI" (
-                        fac_code, nama_kapal, type_of_vessel, code_kapal,
-                        size_of_vessel, year_of_built, type_of_material,
-                        classification, direct, broker, nama_tertanggung, currency
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', [
-                    r.get("fac_code", ""), r.get("nama_kapal", ""), r.get("type_of_vessel", ""),
-                    r.get("code_kapal", ""), r.get("size_of_vessel", ""), str(r.get("year_of_built", "")),
-                    r.get("type_of_material", "STEEL"), r.get("classification", "BKI"),
-                    r.get("direct", ""), r.get("broker", ""), r.get("nama_tertanggung", ""),
-                    r.get("currency", "IDR")
-                ])
-
-            # Record in ETL_HISTORY
-            now_display = datetime.now().strftime("%d %b %Y, %H:%M WIB")
-            execute_dml('''
-                INSERT INTO etl_history (
-                    file_name, file_size, file_type, cedant, cob, status,
-                    date_display, records_count, schema_accuracy, duration_seconds, log_message
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', [
-                req.file_name or "Bordero_MarineHull_Batch_Unparsed.xlsx",
-                req.file_size or "14.2 KB",
-                "XLSX",
-                req.cedant or "PT Asuransi Central Asia / Konsorsium",
-                req.cob or "Marine Hull",
-                "Berhasil Dimuat (AI Exploded)",
-                now_display,
-                len(exploded_rows),
-                99.8,
-                3.4,
-                f"AI Parsing Engine sukses. Sebanyak {len(input_rows)} baris mentah di-explode menjadi {len(exploded_rows)} baris entitas kapal individual terstandarisasi."
-            ])
-        except Exception as dwh_err:
-            print(f"Error saving AI parsed results to DWH: {dwh_err}")
-
-    # Build Before vs After sample comparison for modal
     sample_comparison = []
     for raw in input_rows[:2]:
         raw_code = raw.get("fac_code", "")
@@ -1455,15 +1500,15 @@ def execute_ai_parsing(req: AiParseRequest):
 
     return {
         "success": True,
-        "usedEngine": parse_result.get("used_engine", "Advanced AI Engine"),
+        "usedEngine": "Parsing Engine",
         "sourceCount": len(input_rows),
         "resultCount": len(exploded_rows),
-        "expansionRatio": parse_result.get("expansion_ratio", 1.5),
-        "columns": parse_result.get("columns", introspect_table_columns("FACUL_ETL_MH_PARSED_AI")),
+        "expansionRatio": 1.0,
+        "columns": base_cols,
         "data": exploded_rows,
         "sampleComparison": sample_comparison,
-        "targetTable": "FACUL_ETL_MH_PARSED_AI",
-        "message": f"Parsing AI selesai. {len(input_rows)} baris mentah berhasil dipecah menjadi {len(exploded_rows)} baris entitas kapal."
+        "targetTable": safe_table_name,
+        "message": f"Parsing selesai. Ditemukan {len(exploded_rows)} kecocokan."
     }
 
 

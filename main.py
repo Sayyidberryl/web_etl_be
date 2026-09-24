@@ -1437,6 +1437,7 @@ class AiParseRequest(BaseModel):
     output_title: Optional[str] = ""
 
 @app.post("/api/ai-parse")
+@app.post("/ai-parse")
 def execute_ai_parsing(req: AiParseRequest):
     """Executes ETL Simulation by querying existing DB based on fac_code and creating dynamic tables."""
     input_rows = req.rows if req.rows and len(req.rows) > 0 else demo_data.DEMO_RAW_10_ROWS
