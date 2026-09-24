@@ -1446,6 +1446,70 @@ class AiParseRequest(BaseModel):
     target_table: Optional[str] = "FACUL_ETL_MH_AKSEPTASI"
     output_title: Optional[str] = ""
 
+class EtlLookupRequest(BaseModel):
+    fac_codes: List[str]
+    target_table: str
+    output_title: str
+    file_name: str
+
+@app.post("/api/etl-lookup")
+def execute_etl_lookup(req: EtlLookupRequest):
+    timestamp_suffix = int(time.time())
+    base_title = req.output_title.strip() if req.output_title else "Hasil_ETL"
+    safe_table_name = "ETL_OUT_" + re.sub(r'[^a-zA-Z0-9_]', '_', base_title).upper()[:30] + f"_{timestamp_suffix}"
+    base_table = req.target_table
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Create table like base_table
+        if ACTIVE_DB_ENGINE == "sqlite":
+            cur.execute(f"PRAGMA table_info({base_table})")
+            columns_def = cur.fetchall()
+            col_defs = []
+            for col in columns_def:
+                col_name = col[1]
+                col_type = col[2]
+                if col_name.lower() == "id":
+                    col_defs.append(f"{col_name} INTEGER PRIMARY KEY AUTOINCREMENT")
+                else:
+                    col_defs.append(f"{col_name} {col_type}")
+            create_sql = f"CREATE TABLE {safe_table_name} ({', '.join(col_defs)})"
+            cur.execute(create_sql)
+        else:
+            cur.execute(f'CREATE TABLE "{safe_table_name}" (LIKE "{base_table}" INCLUDING ALL)')
+            
+        # Register in GENERATED_TABLES
+        if ACTIVE_DB_ENGINE == "sqlite":
+            cur.execute("CREATE TABLE IF NOT EXISTS GENERATED_TABLES (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
+                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
+            )
+        else:
+            cur.execute("CREATE TABLE IF NOT EXISTS \"GENERATED_TABLES\" (id SERIAL PRIMARY KEY, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT INTO \"GENERATED_TABLES\" (table_name, label, description, source_table) VALUES (%s, %s, %s, %s)",
+                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
+            )
+
+        # Insert data
+        if req.fac_codes:
+            if ACTIVE_DB_ENGINE == "sqlite":
+                placeholders = ','.join(['?'] * len(req.fac_codes))
+                cur.execute(f'INSERT INTO "{safe_table_name}" SELECT * FROM "{base_table}" WHERE fac_code IN ({placeholders})', req.fac_codes)
+            else:
+                placeholders = ','.join(['%s'] * len(req.fac_codes))
+                cur.execute(f'INSERT INTO "{safe_table_name}" SELECT * FROM "{base_table}" WHERE fac_code IN ({placeholders})', req.fac_codes)
+        
+        conn.commit()
+        return {"success": True, "table_name": safe_table_name, "matched_count": len(req.fac_codes)}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+
 @app.post("/api/ai-parse")
 @app.post("/ai-parse")
 def execute_ai_parsing(req: AiParseRequest):
