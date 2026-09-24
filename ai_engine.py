@@ -318,23 +318,13 @@ def run_ai_parsing(
             "Size of Vessel", "Year of Built", "Type of Material", "Classification"
         ]
 
-    # Attempt Gemini API
-    parsed_data = parse_with_gemini_api(
+    # Use deterministic parser directly (Gemini API call skipped to avoid serverless timeout)
+    used_engine = "Parsing Engine"
+    parsed_data = deterministic_ai_fallback_parser(
         rows=rows,
-        prompt_template=prompt_template,
         target_columns=target_columns,
-        source_mapping=source_mapping or {},
-        api_key=api_key
+        source_mapping=source_mapping
     )
-
-    used_engine = "Advanced AI Engine"
-    if not parsed_data:
-        used_engine = "High-Precision Rule Fallback"
-        parsed_data = deterministic_ai_fallback_parser(
-            rows=rows,
-            target_columns=target_columns,
-            source_mapping=source_mapping
-        )
 
     # Standardize output keys
     output_rows = []
