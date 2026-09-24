@@ -1439,12 +1439,21 @@ class AiParseRequest(BaseModel):
 @app.post("/api/ai-parse")
 @app.post("/ai-parse")
 def execute_ai_parsing(req: AiParseRequest):
-    """Executes ETL Simulation by querying existing DB based on fac_code and creating dynamic tables."""
+    """Executes AI parsing, entity extraction & multi-vessel exploding, then creates dynamic table."""
     input_rows = req.rows if req.rows and len(req.rows) > 0 else demo_data.DEMO_RAW_10_ROWS
     
+    # Run AI Parsing using AI Parsing Engine
+    parse_result = ai_engine.run_ai_parsing(
+        rows=input_rows,
+        prompt_template=req.prompt_template or ai_engine.DEFAULT_PROMPT_TEMPLATE,
+        target_columns=req.target_columns,
+        source_mapping=req.source_mapping
+    )
+    
+    exploded_rows = parse_result.get("data", [])
+
     # Clean output title for table name
     timestamp_suffix = int(time.time())
-    
     base_title = req.output_title.strip() if req.output_title else "Output_Simulasi"
     safe_table_name = "ETL_OUT_" + re.sub(r'[^a-zA-Z0-9_]', '_', base_title).upper()[:30] + f"_{timestamp_suffix}"
     
@@ -1453,16 +1462,12 @@ def execute_ai_parsing(req: AiParseRequest):
     if not base_table:
         base_table = "FACUL_ETL_MH_AKSEPTASI"
 
-    # Grab the columns from base table
     base_cols = introspect_table_columns(base_table)
     
     conn = get_db_connection()
     cur = conn.cursor()
     
-    exploded_rows = []
-    
     try:
-        # Create new dynamic table mirroring the base table
         if ACTIVE_DB_ENGINE == "sqlite":
             cur.execute(f"PRAGMA table_info({base_table})")
             columns_def = cur.fetchall()
@@ -1479,35 +1484,33 @@ def execute_ai_parsing(req: AiParseRequest):
         else:
             cur.execute(f'CREATE TABLE "{safe_table_name}" (LIKE "{base_table}" INCLUDING ALL)')
             
-        # Register to GENERATED_TABLES
         cur.execute(
             "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
             (safe_table_name, req.output_title or base_table, f"Hasil proses Parsing Engine dari {req.file_name}", base_table)
         )
         
-        # Insert matched rows
-        for row in input_rows:
-            fac_code = row.get("fac_code") or row.get("Fac Code")
-            if not fac_code:
-                continue
-                
-            search_query = f'SELECT * FROM "{base_table}" WHERE fac_code = ?'
-            cur.execute(search_query.replace('?', '%s') if ACTIVE_DB_ENGINE == "postgres" else search_query, (fac_code,))
-            matches = cur.fetchall()
-            
-            for match in matches:
-                match_dict = dict(match)
-                if 'id' in match_dict:
-                    del match_dict['id']
-                
-                cols = list(match_dict.keys())
-                vals = list(match_dict.values())
+        # We need to insert the exploded rows into the dynamic table. 
+        # Since exploded rows from AI engine might not have all columns of base_table, we match by column name.
+        if exploded_rows:
+            # Get valid columns from base_table
+            if ACTIVE_DB_ENGINE == "sqlite":
+                cur.execute(f"PRAGMA table_info({safe_table_name})")
+                valid_cols = [c[1] for c in cur.fetchall()]
+            else:
+                cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{safe_table_name}' OR table_name = '{safe_table_name.lower()}'")
+                valid_cols = [c[0] for c in cur.fetchall()]
+
+            for row in exploded_rows:
+                # keep only keys that exist in valid_cols
+                filtered_row = {k: v for k, v in row.items() if k in valid_cols and k != 'id'}
+                if not filtered_row:
+                    continue
+                cols = list(filtered_row.keys())
+                vals = list(filtered_row.values())
                 placeholders = ', '.join(['?' if ACTIVE_DB_ENGINE == "sqlite" else '%s'] * len(vals))
                 
                 insert_query = f'INSERT INTO "{safe_table_name}" ({", ".join(cols)}) VALUES ({placeholders})'
                 cur.execute(insert_query, vals)
-                
-                exploded_rows.append(match_dict)
                 
         conn.commit()
         
@@ -1518,7 +1521,6 @@ def execute_ai_parsing(req: AiParseRequest):
         cur.close()
         conn.close()
 
-    # Record in ETL_HISTORY
     now_display = datetime.now().strftime("%d %b %Y, %H:%M WIB")
     execute_dml('''
         INSERT INTO etl_history (
@@ -1536,7 +1538,7 @@ def execute_ai_parsing(req: AiParseRequest):
         len(exploded_rows),
         100.0,
         3.4,
-        f"Parsing Engine sukses. {len(exploded_rows)} baris data berhasil ditemukan berdasarkan fac_code dan dimuat ke tabel {safe_table_name}."
+        f"Parsing Engine sukses. {len(exploded_rows)} baris data berhasil diekstrak dan dimuat ke tabel {safe_table_name}."
     ])
 
     sample_comparison = []
@@ -1553,12 +1555,12 @@ def execute_ai_parsing(req: AiParseRequest):
         "usedEngine": "Parsing Engine",
         "sourceCount": len(input_rows),
         "resultCount": len(exploded_rows),
-        "expansionRatio": 1.0,
+        "expansionRatio": parse_result.get("expansion_ratio", 1.5),
         "columns": base_cols,
         "data": exploded_rows,
         "sampleComparison": sample_comparison,
         "targetTable": safe_table_name,
-        "message": f"Parsing selesai. Ditemukan {len(exploded_rows)} kecocokan."
+        "message": f"Parsing selesai. Ditemukan {len(exploded_rows)} entitas."
     }
 
 
