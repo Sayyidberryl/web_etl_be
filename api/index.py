@@ -1434,10 +1434,19 @@ def execute_ai_parsing(req: AiParseRequest):
         else:
             cur.execute(f'CREATE TABLE "{safe_table_name}" (LIKE "{base_table}" INCLUDING ALL)')
             
-        cur.execute(
-            "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
-            (safe_table_name, req.output_title or base_table, f"Hasil proses Parsing Engine dari {req.file_name}", base_table)
-        )
+        # Ensure GENERATED_TABLES exists
+        if ACTIVE_DB_ENGINE == "sqlite":
+            cur.execute("CREATE TABLE IF NOT EXISTS GENERATED_TABLES (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
+                (safe_table_name, req.output_title or base_table, f"Hasil proses Parsing Engine dari {req.file_name}", base_table)
+            )
+        else:
+            cur.execute("CREATE TABLE IF NOT EXISTS \"GENERATED_TABLES\" (id SERIAL PRIMARY KEY, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT INTO \"GENERATED_TABLES\" (table_name, label, description, source_table) VALUES (%s, %s, %s, %s)",
+                (safe_table_name, req.output_title or base_table, f"Hasil proses Parsing Engine dari {req.file_name}", base_table)
+            )
         
         # We need to insert the exploded rows into the dynamic table. 
         # Since exploded rows from AI engine might not have all columns of base_table, we match by column name.
