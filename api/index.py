@@ -875,6 +875,7 @@ def get_loss_settle(
 
 # ---------------- HISTORY ENDPOINTS ----------------
 
+@app.get("/history")
 @app.get("/api/history")
 def get_history(
     search: Optional[str] = None,
@@ -932,6 +933,7 @@ class HistoryCreateRequest(BaseModel):
     duration_seconds: Optional[float] = 8.0
     log_message: Optional[str] = "File diproses dan divalidasi sukses."
 
+@app.post("/history")
 @app.post("/api/history")
 def create_history(item: HistoryCreateRequest):
     now_display = datetime.now().strftime("%d %b %Y, %H:%M WIB")
@@ -956,6 +958,7 @@ def create_history(item: HistoryCreateRequest):
         "message": f"Riwayat berkas {item.file_name} berhasil disimpan."
     }
 
+@app.get("/history/{history_id}")
 @app.get("/api/history/{history_id}")
 def get_history_detail(history_id: int):
     row = query_one("SELECT * FROM etl_history WHERE id = %s", [history_id])
@@ -965,6 +968,7 @@ def get_history_detail(history_id: int):
 
 # ---------------- MAPPING TEMPLATES ENDPOINTS ----------------
 
+@app.get("/mapping-templates")
 @app.get("/api/mapping-templates")
 def get_mapping_templates():
     rows = query_all("SELECT * FROM mapping_templates ORDER BY id ASC")
@@ -988,6 +992,7 @@ class MappingTemplateRequest(BaseModel):
     target_schema: Optional[str] = "ipr_stage_db"
     mappings: List[Dict[str, Any]]
 
+@app.post("/mapping-templates")
 @app.post("/api/mapping-templates")
 def save_mapping_template(req: MappingTemplateRequest):
     mappings_str = json.dumps(req.mappings)
@@ -1012,6 +1017,7 @@ def save_mapping_template(req: MappingTemplateRequest):
     execute_dml(sql, [req.name, req.target_schema, mappings_str])
     return {"success": True, "message": f"Template '{req.name}' berhasil disimpan."}
 
+@app.delete("/mapping-templates/{template_id}")
 @app.delete("/api/mapping-templates/{template_id}")
 def delete_mapping_template(template_id: int):
     execute_dml("DELETE FROM mapping_templates WHERE id = %s", [template_id])
@@ -1019,6 +1025,7 @@ def delete_mapping_template(template_id: int):
 
 # ---------------- FILE UPLOAD & AI PARSING SIMULATION ----------------
 
+@app.post("/upload")
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -1053,6 +1060,7 @@ class ProcessETLRequest(BaseModel):
     cob: Optional[str] = "Fire & Property"
     mappings: Optional[List[Dict[str, Any]]] = []
 
+@app.post("/process-etl")
 @app.post("/api/process-etl")
 def process_etl(req: ProcessETLRequest):
     now_display = datetime.now().strftime("%d %b %Y, %H:%M WIB")
@@ -1239,7 +1247,9 @@ def get_table_data_generic(
 
 # ---------------- UNPARSED BATCH DATA & FILE INSPECTOR ----------------
 
+@app.get("/unparsed-batch")
 @app.get("/api/unparsed-batch")
+@app.get("/demo-unparsed")
 @app.get("/api/demo-unparsed")
 def get_demo_unparsed_data():
     """Returns curated unparsed raw Marine Hull records for Before vs After AI parsing."""
