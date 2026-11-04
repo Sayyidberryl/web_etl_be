@@ -1264,7 +1264,7 @@ def get_available_tables():
         {
             "id": "acceptance_merge_okt",
             "tableName": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
-            "label": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
+            "label": "MH - Merged Akseptasi",
             "description": "Tabel DWH akseptasi hasil merge Oktober (203.743 baris)",
             "isEtlOutput": False
         },
