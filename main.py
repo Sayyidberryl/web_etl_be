@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 import re
 
 
-# Import AI Engine & Demo Data
+# Import Engine & Demo Data
 try:
     from . import ai_engine
     from . import demo_data
@@ -214,6 +214,42 @@ def init_sqlite_db():
         )
     ''')
 
+    # 1b. FACUL_ETL_MH_AKSEPTASI_MERGE_OKT table (Merged October dataset)
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_AKSEPTASI_MERGE_OKT (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fac_code TEXT,
+            reff_number TEXT,
+            direct TEXT,
+            broker TEXT,
+            nama_tertanggung TEXT,
+            afiliasi_tertanggung TEXT,
+            coverage TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            acceptance_status TEXT,
+            nama_kapal TEXT,
+            type_of_vessel TEXT,
+            code_kapal TEXT,
+            size_of_vessel TEXT,
+            year_of_built TEXT,
+            type_of_material TEXT,
+            classification TEXT,
+            flag TEXT,
+            last_docking_date TEXT,
+            jenis_muatan TEXT,
+            trading_area TEXT,
+            currency TEXT,
+            insured_value REAL,
+            premium_rate REAL,
+            premium_amount REAL,
+            ric REAL,
+            riu_share REAL,
+            riu_gross_premium REAL,
+            riu_net_premium REAL
+        )
+    ''')
+
     # 2. FACUL_ETL_MH_LOSS_PLA table (24 authentic columns)
     cur.execute('''
         CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_LOSS_PLA (
@@ -318,73 +354,7 @@ def init_sqlite_db():
         )
     ''')
 
-    # 6. FACUL_ETL_MH_PARSED_AI (Dynamic DWH Table for AI Exploded Vessels)
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS FACUL_ETL_MH_PARSED_AI (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fac_code TEXT,
-            nama_kapal TEXT,
-            type_of_vessel TEXT,
-            code_kapal TEXT,
-            size_of_vessel TEXT,
-            year_of_built TEXT,
-            type_of_material TEXT,
-            classification TEXT,
-            direct TEXT,
-            broker TEXT,
-            nama_tertanggung TEXT,
-            currency TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # 7. AI_PROMPT_TEMPLATES table
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS AI_PROMPT_TEMPLATES (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            description TEXT,
-            prompt_text TEXT NOT NULL,
-            target_columns TEXT,
-            source_columns TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    # Seed Default AI Prompt Template if not exists
-    cur.execute('''
-        INSERT OR IGNORE INTO AI_PROMPT_TEMPLATES (name, description, prompt_text, target_columns, source_columns)
-        VALUES (
-            'Ekstraksi & Explode Entitas Kapal Marine Hull (Multi-Vessel to Rows)',
-            'Mengekstrak dan memecah 1 baris deskripsi majemuk menjadi banyak baris entitas kapal individual dengan atribut spesifikasi lengkap.',
-            'Anda adalah Senior Data Warehouse Engineer & Marine Insurance Specialist. Ekstrak entitas kapal individual dari deskripsi mentah. Jika 1 baris mengandung >1 kapal, explode menjadi baris terpisah (1 kapal = 1 baris). Ekstrak: Nama Kapal, Type of Vessel, Code Kapal, Size of Vessel, Year of Built, Type of Material, Classification.',
-            '["Nama Kapal", "Type of Vessel", "Code Kapal", "Size of Vessel", "Year of Built", "Type of Material", "Classification"]',
-            '{"Nama Kapal": "fac_desc", "Type of Vessel": ["fac_risk", "fac_desc"], "Code Kapal": "fac_desc", "Size of Vessel": "fac_desc", "Year of Built": "fac_desc", "Type of Material": "fac_desc", "Classification": "fac_desc"}'
-        )
-    ''')
-
-    # Seed initial AI parsed records if table is currently empty
-    cur.execute('SELECT count(*) FROM FACUL_ETL_MH_PARSED_AI')
-    ai_count = cur.fetchone()[0]
-    if ai_count == 0:
-        try:
-            sample_parsed = ai_engine.run_ai_parsing(demo_data.DEMO_RAW_10_ROWS)["data"]
-            for r in sample_parsed:
-                cur.execute('''
-                    INSERT INTO FACUL_ETL_MH_PARSED_AI (
-                        fac_code, nama_kapal, type_of_vessel, code_kapal,
-                        size_of_vessel, year_of_built, type_of_material,
-                        classification, direct, broker, nama_tertanggung, currency
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    r.get("fac_code", ""), r.get("nama_kapal", ""), r.get("type_of_vessel", ""),
-                    r.get("code_kapal", ""), r.get("size_of_vessel", ""), r.get("year_of_built", ""),
-                    r.get("type_of_material", ""), r.get("classification", ""),
-                    r.get("direct", ""), r.get("broker", ""), r.get("nama_tertanggung", ""),
-                    r.get("currency", "IDR")
-                ))
-        except Exception as seed_err:
-            print(f"Notice: Could not seed initial AI records: {seed_err}")
+    # 6. (Reserved - no additional tables needed for ETL output)
 
     conn.commit()
     conn.close()
@@ -433,10 +403,12 @@ def format_query(query_sql: str, is_sqlite: bool) -> str:
     sql = query_sql
     if is_sqlite:
         sql = sql.replace('public."FACUL_ETL_MH_AKSEPTASI"', 'FACUL_ETL_MH_AKSEPTASI')
+        sql = sql.replace('public."FACUL_ETL_MH_AKSEPTASI_MERGE_OKT"', 'FACUL_ETL_MH_AKSEPTASI_MERGE_OKT')
         sql = sql.replace('public."FACUL_ETL_MH_LOSS_PLA"', 'FACUL_ETL_MH_LOSS_PLA')
         sql = sql.replace('public."FACUL_ETL_MH_LOSS_SETTLE"', 'FACUL_ETL_MH_LOSS_SETTLE')
         sql = sql.replace('public."FACUL_ETL_MH_PARSED_AI"', 'FACUL_ETL_MH_PARSED_AI')
         sql = sql.replace('"FACUL_ETL_MH_AKSEPTASI"', 'FACUL_ETL_MH_AKSEPTASI')
+        sql = sql.replace('"FACUL_ETL_MH_AKSEPTASI_MERGE_OKT"', 'FACUL_ETL_MH_AKSEPTASI_MERGE_OKT')
         sql = sql.replace('"FACUL_ETL_MH_LOSS_PLA"', 'FACUL_ETL_MH_LOSS_PLA')
         sql = sql.replace('"FACUL_ETL_MH_LOSS_SETTLE"', 'FACUL_ETL_MH_LOSS_SETTLE')
         sql = sql.replace('"FACUL_ETL_MH_PARSED_AI"', 'FACUL_ETL_MH_PARSED_AI')
@@ -662,10 +634,11 @@ def root(request: Request):
 @app.get("/health")
 @app.get("/api/health")
 def health_check():
+    pg_ok = test_postgres_connection()
     return {
         "status": "ok",
-        "active_database": ACTIVE_DB_ENGINE,
-        "postgres_connected": (ACTIVE_DB_ENGINE == "postgres"),
+        "active_database": "postgres" if pg_ok else "sqlite",
+        "postgres_connected": pg_ok,
         "postgres_host": DB_CONFIG.get("host"),
         "timestamp": datetime.now().isoformat()
     }
@@ -965,10 +938,10 @@ class HistoryCreateRequest(BaseModel):
     cedant: str
     cob: str
     status: Optional[str] = "Berhasil Dimuat"
-    records_count: Optional[int] = 48250
-    schema_accuracy: Optional[float] = 99.8
-    duration_seconds: Optional[float] = 8.0
-    log_message: Optional[str] = "File diproses dan divalidasi sukses."
+    records_count: Optional[int] = 0
+    schema_accuracy: Optional[float] = 100.0
+    duration_seconds: Optional[float] = 3.5
+    log_message: Optional[str] = "Berkas berhasil divalidasi dan dimuat ke database."
 
 @app.post("/history")
 @app.post("/api/history")
@@ -1003,30 +976,176 @@ def get_history_detail(history_id: int):
         raise HTTPException(status_code=404, detail="Riwayat tidak ditemukan")
     return row
 
+class HistoryUpdateRequest(BaseModel):
+    file_name: Optional[str] = None
+    status: Optional[str] = None
+    log_message: Optional[str] = None
+
+@app.patch("/history/{history_id}")
+@app.patch("/api/history/{history_id}")
+@app.put("/history/{history_id}")
+@app.put("/api/history/{history_id}")
+def update_history(history_id: int, req: HistoryUpdateRequest):
+    row = query_one("SELECT * FROM etl_history WHERE id = %s", [history_id])
+    if not row:
+        raise HTTPException(status_code=404, detail="Riwayat tidak ditemukan")
+    
+    updates = []
+    params = []
+    if req.file_name is not None:
+        updates.append("file_name = %s")
+        params.append(req.file_name.strip())
+    if req.status is not None:
+        updates.append("status = %s")
+        params.append(req.status.strip())
+    if req.log_message is not None:
+        updates.append("log_message = %s")
+        params.append(req.log_message.strip())
+        
+    if not updates:
+        return {"success": True, "message": "Tidak ada perubahan", "data": row}
+        
+    params.append(history_id)
+    execute_dml(f"UPDATE etl_history SET {', '.join(updates)} WHERE id = %s", params)
+    updated_row = query_one("SELECT * FROM etl_history WHERE id = %s", [history_id])
+    return {"success": True, "message": "Riwayat berhasil diperbarui", "data": updated_row}
+
+@app.delete("/history/{history_id}")
+@app.delete("/api/history/{history_id}")
+def delete_history(history_id: int):
+    row = query_one("SELECT * FROM etl_history WHERE id = %s", [history_id])
+    if not row:
+        raise HTTPException(status_code=404, detail="Riwayat tidak ditemukan")
+    execute_dml("DELETE FROM etl_history WHERE id = %s", [history_id])
+    return {"success": True, "message": f"Riwayat ID {history_id} berhasil dihapus"}
+
+class TableUpdateRequest(BaseModel):
+    label: str
+    description: Optional[str] = None
+
+@app.patch("/api/tables/{table_name}")
+@app.put("/api/tables/{table_name}")
+def update_table_meta(table_name: str, req: TableUpdateRequest):
+    safe_name = table_name.strip()
+    execute_dml("UPDATE GENERATED_TABLES SET label = %s WHERE LOWER(table_name) = LOWER(%s)", [req.label.strip(), safe_name])
+    return {"success": True, "table_name": safe_name, "label": req.label.strip()}
+
+@app.delete("/api/tables/{table_name}")
+def delete_generated_table_endpoint(table_name: str):
+    safe_name = table_name.strip()
+    if safe_name.lower().startswith("etl_out_"):
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            if ACTIVE_DB_ENGINE == "sqlite":
+                cur.execute(f"DROP TABLE IF EXISTS {safe_name}")
+            else:
+                cur.execute(f'DROP TABLE IF EXISTS "{safe_name}" CASCADE')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Error dropping table {safe_name}: {e}")
+        finally:
+            cur.close()
+            conn.close()
+    execute_dml("DELETE FROM GENERATED_TABLES WHERE LOWER(table_name) = LOWER(%s)", [safe_name])
+    return {"success": True, "message": f"Tabel {safe_name} berhasil dihapus"}
+
+DEFAULT_AKSEPTASI_MAPPINGS = [
+    {"no": 1, "standard_name": "Fac Code", "excel_col": "fac_code", "field_db": "fac_code", "data_type": "VARCHAR", "status": "mapped", "is_optional": False},
+    {"no": 2, "standard_name": "Reff Number", "excel_col": "-- Pilih Kolom Excel --", "field_db": "reff_number", "data_type": "TEXT", "status": "unmapped", "is_optional": True},
+    {"no": 3, "standard_name": "Direct", "excel_col": "fac_cedant", "field_db": "direct", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 4, "standard_name": "Broker", "excel_col": "fac_broker", "field_db": "broker", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 5, "standard_name": "Nama Tertanggung", "excel_col": "fac_insured", "field_db": "nama_tertanggung", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 6, "standard_name": "Afiliasi Tertanggung", "excel_col": "fac_insured", "field_db": "afiliasi_tertanggung", "data_type": "TEXT", "status": "mapped", "is_optional": True},
+    {"no": 7, "standard_name": "Coverage", "excel_col": "fac_cover", "field_db": "coverage", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 8, "standard_name": "Start Date", "excel_col": "fac_com_date", "field_db": "start_date", "data_type": "DATE", "status": "mapped", "is_optional": False},
+    {"no": 9, "standard_name": "End Date", "excel_col": "fac_exp_date", "field_db": "end_date", "data_type": "DATE", "status": "mapped", "is_optional": False},
+    {"no": 10, "standard_name": "Acceptance Status", "excel_col": "fac_acc_sts", "field_db": "acceptance_status", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 11, "standard_name": "Nama Kapal", "excel_col": "fac_desc", "field_db": "nama_kapal", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 12, "standard_name": "Type of Vessel", "excel_col": "fac_desc", "field_db": "type_of_vessel", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 13, "standard_name": "Code Kapal", "excel_col": "fac_desc", "field_db": "code_kapal", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 14, "standard_name": "Size of Vessel", "excel_col": "fac_desc", "field_db": "size_of_vessel", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 15, "standard_name": "Year of Built", "excel_col": "fac_desc", "field_db": "year_of_built", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 16, "standard_name": "Type of Material", "excel_col": "fac_desc", "field_db": "type_of_material", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 17, "standard_name": "Classification", "excel_col": "fac_desc", "field_db": "classification", "data_type": "TEXT", "status": "mapped", "is_optional": False},
+    {"no": 18, "standard_name": "Flag", "excel_col": "-- Pilih Kolom Excel --", "field_db": "flag", "data_type": "TEXT", "status": "unmapped", "is_optional": True},
+    {"no": 19, "standard_name": "Last Docking Date", "excel_col": "-- Pilih Kolom Excel --", "field_db": "last_docking_date", "data_type": "DATE", "status": "unmapped", "is_optional": True},
+    {"no": 20, "standard_name": "Jenis Muatan", "excel_col": "-- Pilih Kolom Excel --", "field_db": "jenis_muatan", "data_type": "TEXT", "status": "unmapped", "is_optional": True},
+    {"no": 21, "standard_name": "Trading Area", "excel_col": "-- Pilih Kolom Excel --", "field_db": "trading_area", "data_type": "TEXT", "status": "unmapped", "is_optional": True},
+    {"no": 22, "standard_name": "Currency", "excel_col": "fac_currency", "field_db": "currency", "data_type": "VARCHAR", "status": "mapped", "is_optional": False},
+    {"no": 23, "standard_name": "Insured value", "excel_col": "fac_totsi", "field_db": "insured_value", "data_type": "NUMERIC", "status": "mapped", "is_optional": False},
+    {"no": 24, "standard_name": "Premium Rate", "excel_col": "fac_prem_rate", "field_db": "premium_rate", "data_type": "NUMERIC", "status": "mapped", "is_optional": False},
+    {"no": 25, "standard_name": "Premium Amount", "excel_col": "-- Pilih Kolom Excel --", "field_db": "premium_amount", "data_type": "NUMERIC", "status": "unmapped", "is_optional": True},
+    {"no": 26, "standard_name": "RIC", "excel_col": "-- Pilih Kolom Excel --", "field_db": "ric", "data_type": "TEXT", "status": "unmapped", "is_optional": True},
+    {"no": 27, "standard_name": "RIU Share", "excel_col": "Fac_snd_shr", "field_db": "riu_share", "data_type": "NUMERIC", "status": "mapped", "is_optional": False},
+    {"no": 28, "standard_name": "RIU Gross Premium", "excel_col": "fac_gpremium", "field_db": "riu_gross_premium", "data_type": "NUMERIC", "status": "mapped", "is_optional": False},
+    {"no": 29, "standard_name": "RIU Net Premium", "excel_col": "-- Pilih Kolom Excel --", "field_db": "riu_net_premium", "data_type": "NUMERIC", "status": "unmapped", "is_optional": True}
+]
+
+DEFAULT_SYSTEM_TEMPLATES = [
+    {
+        "id": 1,
+        "name": "Template Akseptasi (Marine Hull)",
+        "cob": "Marine Hull",
+        "target_schema": "FACUL_ETL_MH_AKSEPTASI",
+        "column_count": 29,
+        "description": "Pemetaan skema MH - Data Akseptasi Marine Hull",
+        "mappings": DEFAULT_AKSEPTASI_MAPPINGS
+    },
+    {
+        "id": 2,
+        "name": "Template Loss PLA (Marine Hull)",
+        "cob": "Marine Hull",
+        "target_schema": "FACUL_ETL_MH_LOSS_PLA",
+        "column_count": 24,
+        "description": "Pemetaan klaim awal / Preliminary Loss Advice (OS)",
+        "mappings": []
+    },
+    {
+        "id": 3,
+        "name": "Template Loss SLA (Marine Hull)",
+        "cob": "Marine Hull",
+        "target_schema": "FACUL_ETL_MH_LOSS_SETTLE",
+        "column_count": 24,
+        "description": "Pemetaan klaim lunas / Settled Loss Advice",
+        "mappings": []
+    }
+]
+
 # ---------------- MAPPING TEMPLATES ENDPOINTS ----------------
 
 @app.get("/mapping-templates")
 @app.get("/api/mapping-templates")
 def get_mapping_templates():
-    rows = query_all("SELECT * FROM mapping_templates ORDER BY id ASC")
-    result = []
-    for r in rows:
-        item = dict(r)
-        if isinstance(item.get("mappings_json"), str):
-            try:
-                item["mappings"] = json.loads(item["mappings_json"])
-            except Exception:
+    try:
+        rows = query_all("SELECT * FROM mapping_templates WHERE name NOT ILIKE '%tripakarta%' AND name NOT ILIKE '%bordero%' ORDER BY id ASC")
+        result = []
+        for r in rows:
+            item = dict(r)
+            if isinstance(item.get("mappings_json"), str):
+                try:
+                    item["mappings"] = json.loads(item["mappings_json"])
+                except Exception:
+                    item["mappings"] = []
+            elif isinstance(item.get("mappings_json"), list):
+                item["mappings"] = item["mappings_json"]
+            else:
                 item["mappings"] = []
-        elif isinstance(item.get("mappings_json"), list):
-            item["mappings"] = item["mappings_json"]
-        else:
-            item["mappings"] = []
-        result.append(item)
-    return result
+            result.append(item)
+
+        template_names = {item.get("name") for item in result}
+        for def_tmpl in DEFAULT_SYSTEM_TEMPLATES:
+            if def_tmpl["name"] not in template_names:
+                result.append(def_tmpl)
+        return result
+    except Exception as e:
+        print(f"Error reading mapping templates: {e}")
+        return DEFAULT_SYSTEM_TEMPLATES
 
 class MappingTemplateRequest(BaseModel):
     name: str
-    target_schema: Optional[str] = "ipr_stage_db"
+    target_schema: Optional[str] = "FACUL_ETL_MH_AKSEPTASI"
     mappings: List[Dict[str, Any]]
 
 @app.post("/mapping-templates")
@@ -1066,8 +1185,8 @@ def delete_mapping_template(template_id: int):
 @app.post("/api/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    cob: Optional[str] = Form("Fire & Property"),
-    mapping_template: Optional[str] = Form("Format Standar Bordero TriPakarta Fire 2026")
+    cob: Optional[str] = Form("Marine Hull"),
+    mapping_template: Optional[str] = Form("Template Akseptasi (Marine Hull)")
 ):
     contents = await file.read()
     size_mb = round(len(contents) / (1024 * 1024), 2)
@@ -1093,9 +1212,10 @@ async def upload_file(
 class ProcessETLRequest(BaseModel):
     file_name: str
     file_size: str
-    cedant: Optional[str] = "PT Asuransi Tri Pakarta"
-    cob: Optional[str] = "Fire & Property"
+    cedant: Optional[str] = "-"
+    cob: Optional[str] = "Marine Hull"
     mappings: Optional[List[Dict[str, Any]]] = []
+    records_count: Optional[int] = 0
 
 @app.post("/process-etl")
 @app.post("/api/process-etl")
@@ -1112,8 +1232,8 @@ def process_etl(req: ProcessETLRequest):
 
     new_id = execute_dml(sql, [
         req.file_name, req.file_size, "XLSX", req.cedant, req.cob,
-        "Berhasil Dimuat", now_display, 48250, 99.8, 8.2,
-        "Pemrosesan AI & Validasi skema sukses. Sebanyak 48,250 baris data berhasil divalidasi dan dimuat ke database."
+        "Berhasil Dimuat", now_display, req.records_count, 100.0, 3.5,
+        f"Berkas {req.file_name} berhasil diproses. {req.records_count} baris data divalidasi dan dimuat ke database."
     ], returning_id=True)
 
     return {
@@ -1121,10 +1241,10 @@ def process_etl(req: ProcessETLRequest):
         "history_id": new_id,
         "file_name": req.file_name,
         "status": "completed",
-        "total_records": 48250,
-        "schema_accuracy": 99.8,
+        "total_records": req.records_count,
+        "schema_accuracy": 100.0,
         "remaining_seconds": 0,
-        "message": "Pemrosesan AI selesai dan disimpan ke database."
+        "message": "Proses ETL selesai dan disimpan ke database."
     }
 
 # ---------------- DYNAMIC DWH & RUNTIME TABLES ENDPOINTS ----------------
@@ -1139,32 +1259,32 @@ def get_available_tables():
             "tableName": "FACUL_ETL_MH_AKSEPTASI",
             "label": "MH - Data Akseptasi",
             "description": "Tabel DWH akseptasi polis, slip penutupan, dan portofolio risiko kapal",
-            "isAiParsed": False
+            "isEtlOutput": False
+        },
+        {
+            "id": "acceptance_merge_okt",
+            "tableName": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
+            "label": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
+            "description": "Tabel DWH akseptasi hasil merge Oktober (203.743 baris)",
+            "isEtlOutput": False
         },
         {
             "id": "loss_pla",
             "tableName": "FACUL_ETL_MH_LOSS_PLA",
             "label": "MH - Data Loss PLA",
             "description": "Tabel DWH klaim reasuransi fakultatif berstatus preliminary / outstanding loss",
-            "isAiParsed": False
+            "isEtlOutput": False
         },
         {
             "id": "loss_sla",
             "tableName": "FACUL_ETL_MH_LOSS_SETTLE",
             "label": "MH - Data Loss SLA",
             "description": "Tabel DWH klaim lunas dan realisasi pembayaran santunan reasuransi",
-            "isAiParsed": False
-        },
-        {
-            "id": "ai_parsed",
-            "tableName": "FACUL_ETL_MH_PARSED_AI",
-            "label": "Marine Hull - Hasil Normalisasi AI (Entitas Granular)",
-            "description": "Tabel DWH hasil entity extraction & multi-vessel exploding dengan AI Parsing Engine",
-            "isAiParsed": True
+            "isEtlOutput": False
         }
     ]
 
-    # Fetch generated tables
+    # Fetch generated tables (user-created ETL output tables)
     try:
         gen_rows = query_all("SELECT * FROM GENERATED_TABLES ORDER BY id ASC")
         for r in gen_rows:
@@ -1172,8 +1292,8 @@ def get_available_tables():
                 "id": r["table_name"],
                 "tableName": r["table_name"],
                 "label": r["label"] or r["table_name"],
-                "description": r["description"] or "Tabel Output Simulasi ETL",
-                "isAiParsed": False
+                "description": r["description"] or "Tabel Output ETL",
+                "isEtlOutput": True
             })
     except Exception as e:
         print("Error fetching generated tables:", e)
@@ -1214,12 +1334,12 @@ def get_table_data_generic(
     table_map = {
         "loss_pla": "FACUL_ETL_MH_LOSS_PLA",
         "acceptance": "FACUL_ETL_MH_AKSEPTASI",
+        "acceptance_merge_okt": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
         "loss_sla": "FACUL_ETL_MH_LOSS_SETTLE",
-        "ai_parsed": "FACUL_ETL_MH_PARSED_AI",
         "FACUL_ETL_MH_LOSS_PLA": "FACUL_ETL_MH_LOSS_PLA",
         "FACUL_ETL_MH_AKSEPTASI": "FACUL_ETL_MH_AKSEPTASI",
+        "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
         "FACUL_ETL_MH_LOSS_SETTLE": "FACUL_ETL_MH_LOSS_SETTLE",
-        "FACUL_ETL_MH_PARSED_AI": "FACUL_ETL_MH_PARSED_AI"
     }
     actual_table = table_map.get(table, table)
     columns = introspect_table_columns(actual_table)
@@ -1456,8 +1576,10 @@ class EtlLookupRequest(BaseModel):
 def execute_etl_lookup(req: EtlLookupRequest):
     timestamp_suffix = int(time.time())
     base_title = req.output_title.strip() if req.output_title else "Hasil_ETL"
-    safe_table_name = "ETL_OUT_" + re.sub(r'[^a-zA-Z0-9_]', '_', base_title).upper()[:30] + f"_{timestamp_suffix}"
+    safe_table_name = "etl_out_" + re.sub(r'[^a-zA-Z0-9_]', '_', base_title).lower()[:30] + f"_{timestamp_suffix}"
     base_table = req.target_table
+
+    clean_codes = [str(c).strip() for c in req.fac_codes if c and str(c).strip()]
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -1467,6 +1589,7 @@ def execute_etl_lookup(req: EtlLookupRequest):
             cur.execute(f"PRAGMA table_info({base_table})")
             columns_def = cur.fetchall()
             col_defs = []
+            col_names = []
             for col in columns_def:
                 col_name = col[1]
                 col_type = col[2]
@@ -1474,41 +1597,76 @@ def execute_etl_lookup(req: EtlLookupRequest):
                     col_defs.append(f"{col_name} INTEGER PRIMARY KEY AUTOINCREMENT")
                 else:
                     col_defs.append(f"{col_name} {col_type}")
-            create_sql = f"CREATE TABLE {safe_table_name} ({', '.join(col_defs)})"
+                    col_names.append(col_name)
+            create_sql = f"CREATE TABLE IF NOT EXISTS {safe_table_name} ({', '.join(col_defs)})"
             cur.execute(create_sql)
-        else:
-            cur.execute(f'CREATE TABLE "{safe_table_name}" (LIKE "{base_table}" INCLUDING ALL)')
-            
-        # Register in GENERATED_TABLES
-        if ACTIVE_DB_ENGINE == "sqlite":
-            cur.execute("CREATE TABLE IF NOT EXISTS GENERATED_TABLES (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-            cur.execute(
-                "INSERT INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
-                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
-            )
-        else:
-            cur.execute("CREATE TABLE IF NOT EXISTS \"GENERATED_TABLES\" (id SERIAL PRIMARY KEY, table_name TEXT, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-            cur.execute(
-                "INSERT INTO \"GENERATED_TABLES\" (table_name, label, description, source_table) VALUES (%s, %s, %s, %s)",
-                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
-            )
 
-        # Insert data
-        if req.fac_codes:
-            if ACTIVE_DB_ENGINE == "sqlite":
-                placeholders = ','.join(['?'] * len(req.fac_codes))
-                cur.execute(f'INSERT INTO "{safe_table_name}" SELECT * FROM "{base_table}" WHERE fac_code IN ({placeholders})', req.fac_codes)
-            else:
-                placeholders = ','.join(['%s'] * len(req.fac_codes))
-                cur.execute(f'INSERT INTO "{safe_table_name}" SELECT * FROM "{base_table}" WHERE fac_code IN ({placeholders})', req.fac_codes)
+            # Insert data preserving exact upload order
+            matched_count = 0
+            if clean_codes:
+                quoted_cols = ', '.join([f'"{c}"' for c in col_names])
+                for idx, code in enumerate(clean_codes, 1):
+                    cur.execute(
+                        f'INSERT INTO "{safe_table_name}" (id, {quoted_cols}) SELECT ?, {quoted_cols} FROM "{base_table}" WHERE UPPER(TRIM(fac_code)) = UPPER(TRIM(?)) LIMIT 1',
+                        (idx, code)
+                    )
+                    if cur.rowcount and cur.rowcount > 0:
+                        matched_count += cur.rowcount
+        else:
+            # Postgres: Get column definitions excluding id
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = %s AND column_name != 'id'
+                ORDER BY ordinal_position;
+            """, [base_table])
+            base_cols_meta = cur.fetchall()
+            col_names = [r["column_name"] if isinstance(r, dict) else r[0] for r in base_cols_meta]
+            quoted_cols = ', '.join([f'"{c}"' for c in col_names])
+            b_cols = ', '.join([f'b."{c}"' for c in col_names])
+
+            cur.execute(f'CREATE TABLE IF NOT EXISTS "{safe_table_name}" (LIKE "{base_table}" INCLUDING DEFAULTS)')
+
+            # Insert matched rows preserving exact upload order with consecutive IDs
+            matched_count = 0
+            if clean_codes:
+                insert_query = f"""
+                    INSERT INTO "{safe_table_name}" (id, {quoted_cols})
+                    SELECT u.ord, {b_cols}
+                    FROM unnest(%s::text[]) WITH ORDINALITY AS u(code, ord)
+                    JOIN "{base_table}" b ON UPPER(TRIM(b.fac_code)) = UPPER(TRIM(u.code))
+                    ORDER BY u.ord;
+                """
+                cur.execute(insert_query, [clean_codes])
+                matched_count = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+            
+        # Register in generated_tables
+        if ACTIVE_DB_ENGINE == "sqlite":
+            cur.execute("CREATE TABLE IF NOT EXISTS GENERATED_TABLES (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT UNIQUE, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT OR IGNORE INTO GENERATED_TABLES (table_name, label, description, source_table) VALUES (?, ?, ?, ?)",
+                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
+            )
+        else:
+            cur.execute("CREATE TABLE IF NOT EXISTS generated_tables (id SERIAL PRIMARY KEY, table_name TEXT UNIQUE, label TEXT, description TEXT, source_table TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            cur.execute(
+                "INSERT INTO generated_tables (table_name, label, description, source_table) VALUES (%s, %s, %s, %s) ON CONFLICT (table_name) DO NOTHING",
+                (safe_table_name, req.output_title or base_table, f"Hasil ETL Lookup dari {req.file_name}", base_table)
+            )
         
         conn.commit()
-        return {"success": True, "table_name": safe_table_name, "matched_count": len(req.fac_codes)}
+        return {
+            "success": True, 
+            "table_name": safe_table_name, 
+            "matched_count": matched_count,
+            "total_input": len(clean_codes)
+        }
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
+        conn.close()
 
 @app.post("/api/ai-parse")
 @app.post("/ai-parse")
@@ -1616,12 +1774,12 @@ def execute_ai_parsing(req: AiParseRequest):
         "XLSX",
         req.cedant or "PT Asuransi",
         req.cob or "Marine Hull",
-        "Berhasil Dimuat (Parsing Engine)",
+        "Berhasil Dimuat",
         now_display,
         len(exploded_rows),
         100.0,
         3.4,
-        f"Parsing Engine sukses. {len(exploded_rows)} baris data berhasil diekstrak dan dimuat ke tabel {safe_table_name}."
+        f"Proses ETL sukses. {len(exploded_rows)} baris data berhasil diekstrak dan dimuat ke tabel {safe_table_name}."
     ])
 
     sample_comparison = []
@@ -1635,7 +1793,6 @@ def execute_ai_parsing(req: AiParseRequest):
 
     return {
         "success": True,
-        "usedEngine": "Parsing Engine",
         "sourceCount": len(input_rows),
         "resultCount": len(exploded_rows),
         "expansionRatio": parse_result.get("expansion_ratio", 1.5),
@@ -1643,7 +1800,7 @@ def execute_ai_parsing(req: AiParseRequest):
         "data": exploded_rows,
         "sampleComparison": sample_comparison,
         "targetTable": safe_table_name,
-        "message": f"Parsing selesai. Ditemukan {len(exploded_rows)} entitas."
+        "message": f"Proses ETL selesai. Ditemukan {len(exploded_rows)} baris data."
     }
 
 
