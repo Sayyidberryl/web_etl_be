@@ -1334,7 +1334,8 @@ def get_available_tables():
 @app.get("/table-data")
 @app.get("/api/table-data")
 def get_table_data_generic(
-    table: str = Query("acceptance", description="Table key or table name"),
+    table: Optional[str] = Query(None, description="Table key or table name"),
+    tab: Optional[str] = Query(None, description="Tab key alias"),
     page: int = 1,
     limit: int = 50,
     search: Optional[str] = None,
@@ -1359,7 +1360,8 @@ def get_table_data_generic(
         "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT": "FACUL_ETL_MH_AKSEPTASI_MERGE_OKT",
         "FACUL_ETL_MH_LOSS_SETTLE": "FACUL_ETL_MH_LOSS_SETTLE",
     }
-    actual_table = table_map.get(table, table)
+    target = table or tab or "acceptance"
+    actual_table = table_map.get(target, target)
     columns = introspect_table_columns(actual_table)
     col_keys = [c["key"] for c in columns]
 
