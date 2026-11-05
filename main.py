@@ -1393,25 +1393,33 @@ def get_table_data_generic(
         where_clauses.append("LOWER(code_kapal) LIKE %s")
         params.append(f"%{v_code.lower().strip()}%")
 
-    if insured_loss_name:
-        if "nama_tertanngung_loss" in col_keys:
-            where_clauses.append("LOWER(nama_tertanngung_loss) LIKE %s")
-            params.append(f"%{insured_loss_name.lower().strip()}%")
-        elif "nama_tertanggung" in col_keys:
-            where_clauses.append("LOWER(nama_tertanggung) LIKE %s")
-            params.append(f"%{insured_loss_name.lower().strip()}%")
-
-    if insured_name and "nama_tertanggung" in col_keys:
-        where_clauses.append("LOWER(nama_tertanggung) LIKE %s")
-        params.append(f"%{insured_name.lower().strip()}%")
+    ins_name = insured_name or insured_loss_name
+    if ins_name:
+        ins_lower = f"%{ins_name.lower().strip()}%"
+        sub = []
+        if "nama_tertanggung" in col_keys:
+            sub.append("LOWER(nama_tertanggung) LIKE %s")
+            params.append(ins_lower)
+        if "nama_tertanggung_loss" in col_keys:
+            sub.append("LOWER(nama_tertanggung_loss) LIKE %s")
+            params.append(ins_lower)
+        if sub:
+            where_clauses.append(f"({' OR '.join(sub)})")
 
     if company_name and "direct" in col_keys:
         where_clauses.append("LOWER(direct) LIKE %s")
         params.append(f"%{company_name.lower().strip()}%")
 
-    if status and "status" in col_keys and status not in ["Semua", "Status: Semua"]:
-        where_clauses.append("LOWER(status) = %s")
-        params.append(status.lower().strip())
+    if status and status not in ["Semua", "Status: Semua"]:
+        status_clean = status.lower().strip()
+        status_col = None
+        for sc in ["acceptance_status", "settled_or_os", "status"]:
+            if sc in col_keys:
+                status_col = sc
+                break
+        if status_col:
+            where_clauses.append(f"LOWER({status_col}) LIKE %s")
+            params.append(f"%{status_clean}%")
 
     where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
