@@ -1336,7 +1336,7 @@ def get_available_tables():
 def get_table_data_generic(
     table: str = Query("acceptance", description="Table key or table name"),
     page: int = 1,
-    limit: int = 12,
+    limit: int = 50,
     search: Optional[str] = None,
     fac_code: Optional[str] = None,
     vessel_name: Optional[str] = None,
